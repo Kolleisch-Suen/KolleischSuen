@@ -41,8 +41,9 @@ This repository is a small high-school IT project for replacing paper school-fai
 ## Security Rules
 
 - Never log, commit, transmit, or persist private keys except in the explicitly intended local browser wallet storage.
-- Prefer keeping customer active keys in memory only while signing. If localStorage is used, provide a clear "forget wallet" action.
-- Do not introduce a backend key-custody flow unless the user explicitly asks for that architecture.
+- Lesson from Innopay: signing and broadcasting Hive transactions should happen server-side through an API route, not directly in the customer's browser.
+- Do not send private keys to arbitrary services. If a customer key must be used for signing, submit it only to the local app's signing API route over HTTPS, use it in memory for that request, and never store or log it.
+- If localStorage is used to hold temporary customer wallet material, provide a clear "forget wallet" action.
 - Validate Hive account names, token symbols, token amounts, payment request versions, recipient accounts, and memos before building or signing transactions.
 - Do not use production fair token/accounts for tests without explicit user confirmation.
 
@@ -132,7 +133,7 @@ Decision as of 2026-06-04: keep KolleischSuen separate from the full Innopay hub
 - Do not integrate with `merchant-hub`.
 - Do not use HAFSQL polling for v1.
 - On cashier issuance or customer payment:
-  1. Build, sign, and broadcast the Hive-Engine `tokens.transfer` `custom_json`.
+  1. Submit the requested transfer to a local Next.js API route that validates the request, builds, signs, and broadcasts the Hive-Engine `tokens.transfer` `custom_json` server-side.
   2. Immediately insert a `token_transfer` row with status such as `broadcast` and the returned `hive_tx_id`.
   3. Wait a few seconds for Hive-Engine indexing.
   4. Query Hive-Engine directly to verify the transfer/balance effect.

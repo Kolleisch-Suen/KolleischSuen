@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model event_config {
+  id                Int      @id @default(1)
+  name              String   @default("KolleischSuen")
+  token_symbol      String
+  token_precision   Int      @default(3)
+  cashier_account   String   @db.VarChar(16)
+  organizer_account String?  @db.VarChar(16)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+}
+
+model booth {
+  id           Int      @id @default(autoincrement())
+  name         String
+  hive_account String   @db.VarChar(16)
+  sort_order   Int      @default(0)
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  payment_requests  payment_request[]
+  transfers_to_booth token_transfer[]  @relation("booth_transfers")
+
+  @@unique([hive_account])
+  @@index([is_active, sort_order])
+}
+
+model payment_request {
+  id         String   @id @default(cuid())
+  booth_id   Int
+  booth      booth    @relation(fields: [booth_id], references: [id], onDelete: Restrict)
+  amount     Decimal  @db.Decimal(10, 3)
+  symbol     String
+  memo       String?  @db.Text
+  payload    Json
+  created_at DateTime @default(now())
+
+  transfers token_transfer[]
+
+  @@index([booth_id])
+  @@index([created_at])
+}
+
+model token_transfer {
+  id                 String           @id @default(cuid())
+  hive_tx_id         String?          @unique @db.Char(40)
+  kind               transfer_kind
+  status             transfer_status  @default(pending)
+  from_account       String           @db.VarChar(16)
+  to_account         String           @db.VarChar(16)
+  booth_id           Int?
+  booth              booth?           @relation("booth_transfers", fields: [booth_id], references: [id], onDelete: SetNull)
+  payment_request_id String?
+  payment_request    payment_request? @relation(fields: [payment_request_id], references: [id], onDelete: SetNull)
+  symbol             String
+  quantity           Decimal          @db.Decimal(10, 3)
+  memo               String?          @db.Text
+  request_payload    Json?
+  error_message      String?          @db.Text
+  created_at         DateTime         @default(now())
+  broadcast_at       DateTime?
+  confirmed_at       DateTime?
+  failed_at          DateTime?
+
+  @@index([kind])
+  @@index([status])
+  @@index([from_account])
+  @@index([to_account])
+  @@index([booth_id])
+  @@index([created_at])
+}
+
+enum transfer_kind {
+  cashier_issue
+  customer_payment
+  refund
+  correction
+}
+
+enum transfer_status {
+  pending
+  broadcast
+  confirmed
+  failed
+}
