@@ -6,39 +6,81 @@ datasource db {
   provider = "postgresql"
 }
 
-model event_config {
-  id                Int      @id @default(1)
-  name              String   @default("KolleischSuen")
-  token_symbol      String
-  token_precision   Int      @default(3)
-  cashier_account   String   @db.VarChar(16)
-  organizer_account String?  @db.VarChar(16)
-  is_active         Boolean  @default(true)
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
+model event {
+  id           String    @id @default(cuid())
+  slug         String    @unique
+  name         String
+  starts_at    DateTime?
+  token_symbol String
+  is_active    Boolean   @default(false)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  accounts         event_account[]
+  booths           booth[]
+  payment_requests payment_request[]
+  token_transfers  token_transfer[]
+
+  @@index([is_active])
+  @@index([starts_at])
 }
 
-model booth {
-  id           Int      @id @default(autoincrement())
-  name         String
-  hive_account String   @db.VarChar(16)
-  sort_order   Int      @default(0)
-  is_active    Boolean  @default(true)
+model account {
+  id           String   @id @default(cuid())
+  hive_account String   @unique @db.VarChar(16)
+  display_name String?
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  payment_requests  payment_request[]
+  events         event_account[]
+  booths         booth[]
+  transfers_from token_transfer[] @relation("transfer_from_account")
+  transfers_to   token_transfer[] @relation("transfer_to_account")
+}
+
+model event_account {
+  id         String       @id @default(cuid())
+  event_id   String
+  event      event        @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  account_id String
+  account    account      @relation(fields: [account_id], references: [id], onDelete: Restrict)
+  role       account_role
+  is_active  Boolean      @default(true)
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+
+  @@unique([event_id, account_id, role])
+  @@index([event_id, role, is_active])
+  @@index([account_id])
+}
+
+model booth {
+  id         String   @id @default(cuid())
+  event_id   String
+  event      event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  account_id String
+  account    account  @relation(fields: [account_id], references: [id], onDelete: Restrict)
+  name       String
+  sort_order Int      @default(0)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  payment_requests   payment_request[]
   transfers_to_booth token_transfer[]  @relation("booth_transfers")
 
-  @@unique([hive_account])
-  @@index([is_active, sort_order])
+  @@unique([event_id, name])
+  @@index([event_id, is_active, sort_order])
+  @@index([account_id])
 }
 
 model payment_request {
   id         String   @id @default(cuid())
-  booth_id   Int
+  event_id   String
+  event      event    @relation(fields: [event_id], references: [id], onDelete: Restrict)
+  booth_id   String
   booth      booth    @relation(fields: [booth_id], references: [id], onDelete: Restrict)
-  amount     Decimal  @db.Decimal(10, 3)
+  amount     Decimal  @db.Decimal(10, 2)
   symbol     String
   memo       String?  @db.Text
   payload    Json
@@ -46,23 +88,28 @@ model payment_request {
 
   transfers token_transfer[]
 
+  @@index([event_id])
   @@index([booth_id])
   @@index([created_at])
 }
 
 model token_transfer {
   id                 String           @id @default(cuid())
+  event_id           String
+  event              event            @relation(fields: [event_id], references: [id], onDelete: Restrict)
   hive_tx_id         String?          @unique @db.Char(40)
   kind               transfer_kind
   status             transfer_status  @default(pending)
-  from_account       String           @db.VarChar(16)
-  to_account         String           @db.VarChar(16)
-  booth_id           Int?
+  from_account_id    String
+  from_account       account          @relation("transfer_from_account", fields: [from_account_id], references: [id], onDelete: Restrict)
+  to_account_id      String
+  to_account         account          @relation("transfer_to_account", fields: [to_account_id], references: [id], onDelete: Restrict)
+  booth_id           String?
   booth              booth?           @relation("booth_transfers", fields: [booth_id], references: [id], onDelete: SetNull)
   payment_request_id String?
   payment_request    payment_request? @relation(fields: [payment_request_id], references: [id], onDelete: SetNull)
   symbol             String
-  quantity           Decimal          @db.Decimal(10, 3)
+  quantity           Decimal          @db.Decimal(10, 2)
   memo               String?          @db.Text
   request_payload    Json?
   error_message      String?          @db.Text
@@ -71,17 +118,26 @@ model token_transfer {
   confirmed_at       DateTime?
   failed_at          DateTime?
 
+  @@index([event_id])
   @@index([kind])
   @@index([status])
-  @@index([from_account])
-  @@index([to_account])
+  @@index([from_account_id])
+  @@index([to_account_id])
   @@index([booth_id])
   @@index([created_at])
+}
+
+enum account_role {
+  cashier
+  organizer
+  vendor
+  customer
 }
 
 enum transfer_kind {
   cashier_issue
   customer_payment
+  pand
   refund
   correction
 }
