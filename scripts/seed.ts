@@ -57,7 +57,7 @@ const boothSeeds = [
 ];
 
 async function main() {
-  const tokenSymbol = process.env.SEED_TOKEN_SYMBOL ?? "TOKEN";
+  const tokenSymbol = process.env.SEED_TOKEN_SYMBOL ?? "KISS";
   const cashierHiveAccount =
     process.env.SEED_CASHIER_ACCOUNT ?? "ksuen-cashier";
 

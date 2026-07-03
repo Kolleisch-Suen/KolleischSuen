@@ -20,6 +20,8 @@ model event {
   booths           booth[]
   payment_requests payment_request[]
   token_transfers  token_transfer[]
+  customer_wallets customer_wallet[]
+  claim_tokens     claim_token[]
 
   @@index([is_active])
   @@index([starts_at])
@@ -36,6 +38,7 @@ model account {
   booths         booth[]
   transfers_from token_transfer[] @relation("transfer_from_account")
   transfers_to   token_transfer[] @relation("transfer_to_account")
+  customer_wallet customer_wallet?
 }
 
 model event_account {
@@ -125,6 +128,52 @@ model token_transfer {
   @@index([to_account_id])
   @@index([booth_id])
   @@index([created_at])
+}
+
+/// A pre-provisioned customer wallet held in a pool until a cashier hands it out.
+/// NOTE: `active_key` is a SIMULATED key for the teaching build only. A real Hive
+/// active key must never be stored server-side in plaintext (see AGENTS.md).
+model customer_wallet {
+  id          String        @id @default(cuid())
+  event_id    String
+  event       event         @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  account_id  String        @unique
+  account     account       @relation(fields: [account_id], references: [id], onDelete: Restrict)
+  active_key  String
+  balance     Decimal       @default(0) @db.Decimal(10, 2)
+  status      wallet_status @default(available)
+  created_at  DateTime      @default(now())
+  reserved_at DateTime?
+  claimed_at  DateTime?
+
+  claim_tokens claim_token[]
+
+  @@index([event_id, status])
+}
+
+/// A short-lived, single-use secret encoded in the cashier QR code. Reading it
+/// once lets a phone claim the associated wallet's credentials.
+model claim_token {
+  id         String          @id @default(cuid())
+  token      String          @unique
+  event_id   String
+  event      event           @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  wallet_id  String
+  wallet     customer_wallet @relation(fields: [wallet_id], references: [id], onDelete: Cascade)
+  amount     Decimal         @db.Decimal(10, 2)
+  symbol     String
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime        @default(now())
+
+  @@index([expires_at])
+  @@index([wallet_id])
+}
+
+enum wallet_status {
+  available
+  reserved
+  claimed
 }
 
 enum account_role {

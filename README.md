@@ -6,7 +6,9 @@ The high school runs several fairs each year. At each fair, a central cashier cu
 
 ## Current State
 
-This repository is currently a bare Next.js app skeleton generated with `create-next-app`.
+The **cashier issuance flow (v1)** is implemented on top of the Next.js skeleton.
+The vendor payment, customer scan-to-pay, and organizer reconciliation flows are
+still to be built.
 
 Existing stack:
 
@@ -15,8 +17,42 @@ Existing stack:
 - TypeScript
 - Tailwind CSS 4
 - ESLint
+- PostgreSQL + Prisma 7 (`@prisma/adapter-pg`)
+- Vitest for unit tests
 
-The Hive, Hive-Engine, wallet, QR, cashier, customer, and vendor flows still need to be implemented.
+### Implemented (v1): cashier → QR → claim → wallet
+
+The first working flow lets a cashier turn euros into a handed-out wallet:
+
+1. The cashier opens `/cashier`, enters a euro amount, and presses **Generate**.
+2. The server reserves one wallet from a pre-created pool, "deposits" the
+   equivalent KISS onto it (1 KISS = 1 €), mints a **short-lived, single-use
+   claim token**, and returns a QR code encoding a claim URL.
+3. The customer scans the QR with a phone, which opens `/claim?token=…` and
+   posts the token back exactly once. The server validates and atomically
+   consumes it, then returns the account name and active key.
+4. The phone stores the credentials in `localStorage` and shows `/wallet`, which
+   displays the balance as **€** (KISS stays as the background token).
+
+**v1 is simulated.** No real Hive-Engine calls or broadcasts happen yet:
+balances and "active keys" are mock values (keys are prefixed `SIM-` so they can
+never be confused with a real WIF key). The API routes are shaped so a real
+`@hiveio/dhive` implementation can be dropped in server-side later without
+changing the UI. Signing/broadcasting is a **server** responsibility (see
+`AGENTS.md`), superseding the older browser-signing idea further down this file.
+
+Key pieces:
+
+- Data model: `customer_wallet` (the pool) and `claim_token` (the single-use
+  secret), plus a `token_transfer` ledger row of kind `cashier_issue` written on
+  every issuance.
+- API routes: `POST /api/cashier/issue`, `POST /api/claim`,
+  `GET /api/wallet/balance`.
+- Pages: `/`, `/cashier`, `/claim`, `/wallet`.
+- Pure, unit-tested libs under `src/lib/**` (amount parsing, €↔KISS formatting,
+  Hive account-name validation, sim key/name generation, claim-token expiry).
+
+The event token symbol is `KISS`, configurable via `KISS_SYMBOL`.
 
 ## Blockchain Model
 
@@ -242,6 +278,30 @@ Install dependencies:
 npm install
 ```
 
+Set up the database (local PostgreSQL `ksuen`; connection string in `.env.local`
+as `POSTGRES_URL`). Apply the schema and regenerate the client:
+
+```powershell
+npx prisma db push
+npx prisma generate
+```
+
+> `db push` frequently skips the client regeneration step, so always run
+> `prisma generate` after it, then restart any running dev server.
+
+Seed the events/booths and the pool of claimable wallets:
+
+```powershell
+npm run db:seed          # events, booths, cashier account
+npm run db:seed:wallets  # ~20 available pool wallets for the active event
+```
+
+Run the unit tests (single command runs the whole suite):
+
+```powershell
+npm test
+```
+
 Start the development server:
 
 ```powershell
@@ -253,3 +313,18 @@ Open:
 ```text
 http://localhost:3000
 ```
+
+### Scanning the QR from a phone
+
+The QR code encodes a claim URL built from the request origin. A phone cannot
+reach `localhost`, so to scan from a real device put the dev machine's LAN
+address in `.env.local` and keep the phone on the same Wi-Fi:
+
+```text
+APP_BASE_URL=http://192.168.1.20:3000
+```
+
+Other useful environment variables: `KISS_SYMBOL` (default `KISS`),
+`CLAIM_TTL_SECONDS` (default `300`), `ACTIVE_EVENT_SLUG` (default
+`chreschtmaart`), `MAX_ISSUE_EUROS` (default `1000`), `SEED_WALLET_POOL_SIZE`
+(default `20`).
